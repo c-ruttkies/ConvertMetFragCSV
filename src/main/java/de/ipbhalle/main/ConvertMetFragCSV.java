@@ -396,7 +396,7 @@ public class ConvertMetFragCSV {
 		texlines.add("\\usepackage{lmodern}");
 		texlines.add("\\usepackage{tabularx}");
 		texlines.add("\\usepackage[margin=0.5in]{geometry}");
-		texlines.add("\\usepackage{float}");
+		//texlines.add("\\usepackage{float}");
 		texlines.add("\\usepackage{hyperref}");
 		texlines.add("\\usepackage{graphicx}");
 		texlines.add("\\begin{document}");
