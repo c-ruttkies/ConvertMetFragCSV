@@ -69,6 +69,8 @@ public class ConvertMetFragCSV {
 	public static java.util.Vector<String> propertyWhiteList;
 	public static String sheetName = "Candidate List";
 	public static String moleculeContainerProperty = "InChI"; //inchi
+	public static String format = "xls";
+	public static String urlName = "MetFragWebURL";
 
 	public static InChIGeneratorFactory inchiFactory;
 	
@@ -77,8 +79,10 @@ public class ConvertMetFragCSV {
 	 * @param args
 	 */
 	public static void main(String[] args) {
-		if (args.length <= 1) {
-			System.out.println("usage: command csv='csv file' xls='output xls file' propertyWhiteList=PROPERTY1[,PROPERTY2,...]  [img='with images'] [sheetName=SHEETNAME] [moleculeContainerProperty=MOLECULECONTAINERPROPERTY]");
+		if (args.length <= 2) {
+			System.out.println("usage: command csv='csv file' output='output file' "
+					+ "propertyWhiteList=PROPERTY1[,PROPERTY2,...] [format='tex or xls']"
+					+ " [img='xls with images?'] [sheetName=SHEETNAME] [moleculeContainerProperty=MoleculeContainerProperty]");
 			System.exit(1);
 		}
 
@@ -93,8 +97,10 @@ public class ConvertMetFragCSV {
 			String[] tmp = args_spaced[i].split("=");
 			if (tmp[0].equals("csv"))
 				csvFile = tmp[1];
-			else if (tmp[0].equals("xls"))
+			else if (tmp[0].equals("output"))
 				resultspath = tmp[1];
+			else if (tmp[0].equals("format"))
+				format = tmp[1];
 			else if (tmp[0].equals("sheetName"))
 				sheetName = tmp[1];
 			else if (tmp[0].equals("moleculeContainerProperty"))
@@ -124,7 +130,7 @@ public class ConvertMetFragCSV {
 			System.exit(1);
 		}
 		
-		// get filereader for the sdf file
+		// get file reader for the sdf file
 		File file = new File(csvFile);
 
 		try {
@@ -141,7 +147,9 @@ public class ConvertMetFragCSV {
 		}
 		
 		try {
-			writeXLSFile(file);
+			if(format.equals("xls")) writeXLSFile(file);
+			else if(format.equals("tex")) writeTexFile(file);
+			else System.err.println("Format " + format + " not known. Specify 'tex' or 'xls'!");
 		} catch (CloneNotSupportedException e) {
 			// TODO Auto-generated catch block
 			e.printStackTrace();
@@ -300,6 +308,105 @@ public class ConvertMetFragCSV {
 		System.out.println("Read " + containersList.size() + " molecules");
 	}
 
+	public static void writeTexFile(File csvFile) throws CloneNotSupportedException, IOException {
+		java.util.Vector<String> texLines = new java.util.Vector<String>();
+		
+		java.io.Reader reader = new java.io.InputStreamReader(new java.io.FileInputStream(csvFile), Charset.forName("UTF-8"));
+		CSVParser csvFileParser = new CSVParser(reader, CSVFormat.EXCEL.withHeader());
+		
+		java.util.Iterator<CSVRecord> it = csvFileParser.iterator();
+
+		List<IAtomContainer> containersList = new ArrayList<IAtomContainer>();
+		
+		if(!csvFileParser.getHeaderMap().containsKey(moleculeContainerProperty)) {
+			System.err.println("CSV does not contain moleculeContainerProperty " + moleculeContainerProperty + " as a field");
+			System.exit(1);
+		}
+		
+		addTexHeaders(texLines);
+		
+		while(it.hasNext()) {
+			CSVRecord record = it.next();
+			IAtomContainer con = retrieveAtomContainer(record.get(moleculeContainerProperty));
+			for(int i = 0;  i < propertyWhiteList.size(); i++) {
+				String propValue = "";
+				if(record.isMapped(propertyWhiteList.get(i))) {
+					propValue = record.get(propertyWhiteList.get(i));
+					if(propValue == null) propValue = "";
+				} 
+				con.setProperty(propertyWhiteList.get(i), propValue);
+			}
+			containersList.add(con);
+		}
+		csvFileParser.close();
+		// add images if selected
+		List<RenderedImage> molImages = convertMoleculesToImages(containersList);
+	
+		for (int i = 0; i < containersList.size(); i++) {
+			File imageFile = File.createTempFile("image", ".png", new File(System.getProperty("java.io.tmpdir")));
+			
+			texLines.add("\\begin{minipage}{1\\textwidth}");
+			texLines.add("	\\begin{minipage}{0.15\\textwidth}");
+			
+			if (ImageIO.write(molImages.get(i), "png", imageFile)) {
+				texLines.add("		\\includegraphics[scale=0.5]{" + imageFile + "}");
+			}
+			texLines.add("	\\end{minipage} \\hfill");
+			texLines.add("	\\begin{minipage}{0.8\\textwidth}");
+			texLines.add("		\\begin{itemize}");
+			Map<Object, Object> molProperties = containersList.get(i).getProperties();
+			Iterator<Object> propNames = molProperties.keySet().iterator();
+			// just in case images are used
+			String urlname = "";
+			while(propNames.hasNext()) {
+				String propName = (String)propNames.next();
+				String propValue = (String)molProperties.get(propName);
+				propValue = propValue.replaceAll("\\$", "").replaceAll("\\^", "").replaceAll("%", "").replaceAll("_", "\\\\_");
+				if(!propName.equals(urlName)) {
+					texLines.add("			\\item[] \\textbf{" + propName + "} " + propValue);
+				} else {
+					urlname = propValue;
+				}
+			}
+			texLines.add("		\\end{itemize}");
+			texLines.add("	\\end{minipage}\\\\[0.4cm]");
+			if(!urlname.equals("")) {
+				texLines.add("\\textbf{MetFragWeb:} \\href{" + urlname + "}{Send query to MetFragWeb}");
+			}
+			texLines.add("\\end{minipage}\\\\[0.8cm]");
+			texLines.add("");
+		}
+		
+		java.io.BufferedWriter bwriter = new java.io.BufferedWriter(new java.io.FileWriter(new java.io.File(resultspath)));
+	
+		addTexFooters(texLines);
+		
+		for(int i = 0; i < texLines.size(); i++) {
+			bwriter.write(texLines.get(i));
+			bwriter.newLine();
+		}
+		bwriter.close();
+		System.out.println("Read " + containersList.size() + " molecules");
+	}
+	
+	public static void addTexHeaders(java.util.Vector<String> texlines) {
+		texlines.add("\\documentclass[9pt]{article}");
+		texlines.add("\\usepackage[T1]{fontenc}");
+		texlines.add("\\usepackage[english]{babel}");
+		texlines.add("\\usepackage{lmodern}");
+		texlines.add("\\usepackage{tabularx}");
+		texlines.add("\\usepackage[margin=0.5in]{geometry}");
+		texlines.add("\\usepackage{float}");
+		texlines.add("\\usepackage{hyperref}");
+		texlines.add("\\usepackage{graphicx}");
+		texlines.add("\\begin{document}");
+		texlines.add("\\setlength\\parindent{0pt}");
+	}
+
+	public static void addTexFooters(java.util.Vector<String> texlines) {
+		texlines.add("\\end{document}");
+	}
+	
 	public static IAtomContainer retrieveAtomContainer(String moleculeString) {
 		if(moleculeContainerProperty.toLowerCase().equals("smiles")) return parseSmiles(moleculeString);
 		else if(moleculeContainerProperty.toLowerCase().equals("inchi"))
