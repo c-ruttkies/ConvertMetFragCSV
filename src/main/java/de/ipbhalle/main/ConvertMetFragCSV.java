@@ -361,8 +361,8 @@ public class ConvertMetFragCSV {
 			while(propNames.hasNext()) {
 				String propName = (String)propNames.next();
 				String propValue = (String)molProperties.get(propName);
-				propValue = propValue.replaceAll("\\$", "").replaceAll("\\^", "").replaceAll("%", "").replaceAll("_", "\\\\_");
-				if(!propName.equals(urlName)) {
+				propValue = propValue.replaceAll("\\$", "").replaceAll("\\^", "").replaceAll("%", "").replaceAll("_", "\\\\_").trim();
+				if(!propName.equals(urlName) && propValue.length() != 0) {
 					texLines.add("			\\item[] \\textbf{" + propName + "} " + propValue);
 				} else {
 					urlname = propValue;
